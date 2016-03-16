@@ -1,0 +1,59 @@
+---
+title: "trisect.Rd"
+output: html_document
+---
+
+trisectr is a tool to show heterogeneous binding rules of a transcription factor across multiple cells. We collected the ChIP-Seq narrowpeak data for our purpose. However, the pipeline is applicable for broadpeak data as well.
+
+### Loading source files and data.
+We have an example dataset for ZNF143 transcription factor. The dataset training and testing sequences for a list of cells. Under each cell, there is 4 data.frame: training sequence information, testing sequence information, training matrix, testing matrix. Each row of datamatrix is a sequence and each column corresponds to a feture. There is an extra column for label.
+```{r}
+source('R/emt.r') #source('Dropbox/git-repo/trisectr/R/emt.r')
+tf = 'ZNF143'
+load('data/ZNF143.RData') #"Joyce, can you make the data so that it can be loaded by data function? Right now I am loading the data dirently from my local directory."
+cells = names(datalist)
+print(cells)
+head(datalist$Gm12878$trainseq)
+datalist$Gm12878$train[1:5, 1:5]
+```
+
+### Building model for each cell.
+Building each model might take some time...I provided the models in the data folder already
+```{r}
+#models = lapply(datalist, function(x) cellSpecClsfr(x)); names(models) = cells
+#save(models, file='Dropbox/git-repo/trisectr/data/models.RData') 
+load('data/models.RData')
+sapply(cells, function(x) models[[x]]$auc) #model accuracy based of 75% test data
+sapply(cells, function(x) models[[x]]$model$n.tree) #number of sub-model in each model
+models = lapply(models, function(x) x$model) #drop the auc for now
+```
+
+### Clustering the submodels across cells
+The cluster membership matrix gives the constituent cell-specific sub-model counts. Next, a new ensemble object is created for each cluster.
+
+1. In the get.cluster.membership function, I called plot.cluster.membership...i can't generate the figure due to large margin size. So I saved it as pdf..need to fix it.
+2. "## quartz_off_screen"-how can I remove this part?
+
+```{r, message=FALSE}
+pdf(paste0(getwd(), '/cluster.membership.pdf'))
+fit = get.cluster.membership(models, clen=16); 
+dev.off()
+newEnsembles = make.cluster.ensembles(models, fit, clen=16)
+```
+
+### Functional assesment of the target genes
+
+```{r, message=FALSE}
+targets = get.targets(datalist, newEnsembles, clen=16) #get the target genes from each cell under each cluster
+load('data/expression.RData')
+coherence = setup.exp.coherence(targets, exprsn, exptheK=1, verbose=F)
+df = exp.coherence(coherence)
+sum(df$odds>1 & df$p.value<0.05, na.rm=T) #how many clusters have expression coherence
+#sum(df$odds<1 & df$p.value<0.05, na.rm=T)
+#df
+
+load('data/keggmat.Rda')
+coherence2 = setup.pathway.coherence(targets$entrezmat, pathwaymat, verbose=F)
+df = pathway.coherence(coherence2)
+sum(df$odds>1 & df$p.value<0.05, na.rm=T) #how many clusters have pathway coherence
+```
