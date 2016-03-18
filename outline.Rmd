@@ -3,57 +3,176 @@ title: "trisect.Rd"
 output: html_document
 ---
 
-trisectr is a tool to show heterogeneous binding rules of a transcription factor across multiple cells. We collected the ChIP-Seq narrowpeak data for our purpose. However, the pipeline is applicable for broadpeak data as well.
+TRISECTR is an ensemble based approach that can identify heterogeneous binding rules of cell-type specific transcription factor occupancy and analyze the between-cell-type sharing of such rules. Our appoach is general and can be applied to both narrow peak and broad peak CHIP-Seq data.
 
-### Loading source files and data.
-We have an example dataset for ZNF143 transcription factor. The dataset training and testing sequences for a list of cells. Under each cell, there is 4 data.frame: training sequence information, testing sequence information, training matrix, testing matrix. Each row of datamatrix is a sequence and each column corresponds to a feture. There is an extra column for label.
+
+### Set up
+
+Mahfuza: In this section, please use `library()` to call the packages that you need. This is especially useful when this work is going to be presented as a GitHub repo and not an offical R CRAN or BioConductor package. The users can then know the requried packages and install them before running this Rmd file.
+
+In addition, when you are preparing for R packages, you need to remove all the `required()` from inside the functions! These packages will be listed in the package `DESCRIPTION` file under either `Depends`, `Suggests` or `Imports`, depending on their usage.
+
+
+```{r}
+library("kohonen")
+library("gbm")
+library("RangedData")
+library("biomart")
+library("ChIPpeakAnno")
+library("org.Hs.eg.db")
+```
+
+
+### Loading source files and data
+
+In this vignette, we provide an example dataset for ZNF143 transcription factor in the form of a `list`, which stores data `list` of four cell types: `Gm12878`, `H1hesc`, `Helas3`, and `K562`. For each cell type, the `list` includes four objects: `trainseq`, `testseq`, `training`, and `testing`. The `training` and `testing` matrix each stores sequences in the rows and features in the columns, with an additional column of sequence labels. 
+
+
+Load EMT functions.
+
 ```{r}
 source('R/emt.r') #source('Dropbox/git-repo/trisectr/R/emt.r')
-tf = 'ZNF143'
-load('data/ZNF143.RData') #"Joyce, can you make the data so that it can be loaded by data function? Right now I am loading the data dirently from my local directory."
-cells = names(datalist)
+```
+
+Load ZNF143 data.
+
+```{r}
+tf <- 'ZNF143'
+data("ZNF143")
+cells <- names(datalist)
 print(cells)
+```
+
+The `trainseq` columns are : 
+
+1. `sequence`: Mahfuze please describe this column and same for all the following columns listed here.
+2. `seqnames`:
+3. `start`:
+4. `end`:
+5. `score`:
+6. `value`:
+7. `peakid`:
+8. `label`: 
+
+
+```{r}
 head(datalist$Gm12878$trainseq)
+```
+
+The `train` columns are 
+
+1. `label`:
+2. `M00001`:
+3. `M00002`:
+4. `M00003`:
+5. `M00004`:
+
+
+```{r}
 datalist$Gm12878$train[1:5, 1:5]
 ```
 
-### Building model for each cell.
-Building each model might take some time...I provided the models in the data folder already
-```{r}
-#models = lapply(datalist, function(x) cellSpecClsfr(x)); names(models) = cells
-#save(models, file='Dropbox/git-repo/trisectr/data/models.RData') 
-load('data/models.RData')
-sapply(cells, function(x) models[[x]]$auc) #model accuracy based of 75% test data
-sapply(cells, function(x) models[[x]]$model$n.tree) #number of sub-model in each model
-models = lapply(models, function(x) x$model) #drop the auc for now
+
+### Building model for each cell
+
+Note that this steps takes considerable amount of time unless multiple cores are used.
+
+```{r, eval = FALSE}
+models <- lapply(datalist, function(x) cellSpecClsfr(x))
+names(models) <- cells
 ```
 
-### Clustering the submodels across cells
-The cluster membership matrix gives the constituent cell-specific sub-model counts. Next, a new ensemble object is created for each cluster.
+For the purpose of this vignette, we pre-computed the model and stored the results in an R object which can be easily loaded as follows.
 
-1. In the get.cluster.membership function, I called plot.cluster.membership...i can't generate the figure due to large margin size. So I saved it as pdf..need to fix it.
+```{r}
+data("models")
+```
+
+
+The model AUC based on 75% of the data is :
+(Why 75%? Can you explain here?)
+
+```{r}
+sapply(cells, function(x) models[[x]]$auc) 
+```
+
+The number of sub-models for each of the four cell-type:
+
+```{r}
+sapply(cells, function(x) models[[x]]$model$n.tree)
+```
+
+Let's create an object that stores the sub-model results only.
+
+```{r}
+submodels <- lapply(models, function(x) x$model)
+```
+
+
+### Clustering the submodels across cells
+
+1. In the `get.cluster.membership` function, I called plot.cluster.membership...i can't generate the figure due to large margin size. So I saved it as pdf..need to fix it. 
+
+Joyce: An idea is to set the default to saving heatmap.2 to an external png or pdf file. Margin size is diffcult to manuever in R, especially when the window size varies between user to user. 
+
 2. "## quartz_off_screen"-how can I remove this part?
+
+Joyce: DK...
+
+
+Summarize the cluster membership matrix and plot the constituent cell-specific sub-model counts.
 
 ```{r, message=FALSE}
 pdf(paste0(getwd(), '/cluster.membership.pdf'))
-fit = get.cluster.membership(models, clen=16); 
+fit <- get.cluster.membership(submodels, clen = 16) 
 dev.off()
-newEnsembles = make.cluster.ensembles(models, fit, clen=16)
 ```
+
+Make a new ensemble object for each cluster.
+
+```{r}
+newEnsembles <- make.cluster.ensembles(submodels, fit, clen = 16)
+```
+
 
 ### Functional assesment of the target genes
 
+Get the target genes (what does target gene mean in this context?) of each cell type from each cluster.
+
 ```{r, message=FALSE}
-targets = get.targets(datalist, newEnsembles, clen=16) #get the target genes from each cell under each cluster
-load('data/expression.RData')
-coherence = setup.exp.coherence(targets, exprsn, exptheK=1, verbose=F)
-df = exp.coherence(coherence)
-sum(df$odds>1 & df$p.value<0.05, na.rm=T) #how many clusters have expression coherence
+targets <- get.targets(datalist, newEnsembles, clen = 16)
+```
+
+
+How many clusters have expression coherence?
+
+```{r}
+data("expression")
+coherence <- setup.exp.coherence(targets, exprsn, exptheK = 1, verbose = F)
+df <- exp.coherence(coherence)
+sum(df$odds > 1 & df$p.value < 0.05, na.rm = T)
 #sum(df$odds<1 & df$p.value<0.05, na.rm=T)
 #df
-
-load('data/keggmat.Rda')
-coherence2 = setup.pathway.coherence(targets$entrezmat, pathwaymat, verbose=F)
-df = pathway.coherence(coherence2)
-sum(df$odds>1 & df$p.value<0.05, na.rm=T) #how many clusters have pathway coherence
 ```
+
+
+P.S. Mahfauze: Be consistent in the R object that you use to store results, either `Rda` or `Rdata`.
+
+How many clusters have pathway coherence?
+
+```{r}
+data("keggmat")
+coherence2 <- setup.pathway.coherence(targets$entrezmat, pathwaymat, verbose=F)
+df <- pathway.coherence(coherence2)
+sum(df$odds > 1 & df$p.value < 0.05, na.rm = T) 
+```
+
+
+
+### Session information
+
+
+```{r}
+sessionInfo()
+```
+
