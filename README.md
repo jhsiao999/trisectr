@@ -1,2 +1,1 @@
-# trisectr
-# trisectr
+TRISECTR is an ensemble based approach that can identify heterogeneous binding rules of cell-type specific transcription factor occupancy and analyze the between-cell-type sharing of such rules. Our appoach is general and can be applied to both narrow peak and broad peak CHIP-Seq data.
